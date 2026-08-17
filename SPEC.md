@@ -150,7 +150,7 @@ RNG mode is a utility/randomizer mode rather than physical roulette simulation.
 
 ### 6.1 Presentation
 
-- The wheel is displayed using the same 37-sector geometry.
+- The wheel is displayed using the configured rotor geometry: 37 sectors for European, D12, and D6; 21 sectors for D20.
 - No roulette ball is used.
 - A **fixed downward-pointing arrow at the top of the display** identifies the selected sector.
 - The presentation should resemble a small lottery drum: the wheel rotates beneath a stationary selector.
@@ -172,25 +172,28 @@ The selectable RNG spans are:
 - D12
 - D6
 
-The visual wheel always retains **37 sectors**.
+European Roulette, D12, and D6 retain the **37-sector** visual wheel.
+
+D20 uses a bespoke **21-sector** rotor containing zero and one sector for each value from 1 through 20.
 
 The green zero sector remains present in all RNG modes.
 
-For non-roulette RNG spans, values repeat around the existing sectors rather than reducing the number of sectors.
+For D12 and D6, values repeat around the 36 non-zero sectors of the existing roulette geometry.
 
-For D20, D12, and D6, the intended value ranges include zero:
+The dice layouts are:
 
-- **D20:** 0–19
-- **D12:** 0–11
-- **D6:** 0–5
+- **D20:** Bespoke roulette rotor with 0 and 1–20
+- **D12:** 0 and 1–12 repeating to fill the 36 non-zero sectors
+- **D6:** 0 and 1–6 repeating to fill the 36 non-zero sectors
 
-This preserves the zero sector and provides exactly 20, 12, or 6 possible values respectively.
+The zero sector is retained as a roulette-style visual feature, but it is not an eligible logical die result. Logical dice results use the conventional ranges D20 = 1–20, D12 = 1–12, and D6 = 1–6.
 
-Because 37 is not evenly divisible by all RNG spans, the number of visible sectors carrying a given value must **not** determine that value's probability.
 
 ### 6.3 RNG fairness
 
 RNG mode must select the logical result uniformly from the configured span first.
+
+Dice results are generated with an unbiased bounded random draw over the conventional range 1 through N. Zero is not a logical dice outcome.
 
 The animation then rotates the wheel so that a sector carrying the selected value stops beneath the fixed arrow.
 
@@ -204,7 +207,7 @@ select matching visual sector
 animate wheel to that sector
 ```
 
-Unequal repetition of labels around the 37 visual sectors must not bias the RNG distribution.
+Repeated labels on the D12 and D6 rotors must not determine probability. The logical result is selected uniformly from 1 through N first, and the animation then selects a matching visual sector.
 
 ### 6.4 RNG roll duration
 
@@ -214,11 +217,9 @@ Exact control presentation and min/max duration are tunable.
 
 ### 6.5 RNG roll initiation
 
-**TBD:** final roll initiation interaction.
+RNG mode opens with a stationary wheel. Tapping the wheel or its central region initiates a roll.
 
-Candidate: enter RNG mode with a stationary wheel and tap the wheel/central region to initiate each roll.
-
-Entering RNG mode should not be assumed to auto-roll unless explicitly implemented by a later decision.
+Further taps are ignored while a roll animation is active. After the result is displayed, the user may tap again for another independent roll.
 
 ---
 
@@ -751,7 +752,7 @@ Acceptance:
 Implement:
 
 - fixed downward arrow;
-- 37-sector wheel;
+- configured rotor geometry (37 sectors for European/D12/D6 and 21 sectors for D20);
 - European / D20 / D12 / D6 label mapping;
 - uniform logical RNG;
 - configured roll duration;
@@ -760,7 +761,7 @@ Implement:
 Acceptance:
 
 - no roulette ball appears in RNG mode;
-- Dn outcomes are uniform over 0..N-1 independent of visible label repetition;
+- Dn outcomes are uniform over 1..N independent of visible label repetition;
 - final displayed sector agrees with the generated result.
 
 ### Milestone 4 — Betting/session shell
@@ -886,7 +887,6 @@ The following are outside the initial scope unless explicitly added later:
 The following are intentionally left open:
 
 - exact Main Screen sector geometry;
-- RNG roll initiation gesture;
 - exact RNG animation easing;
 - exact haptic duration range;
 - final arm arming/launch thresholds;

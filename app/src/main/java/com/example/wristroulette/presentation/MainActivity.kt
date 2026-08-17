@@ -5,9 +5,10 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Build
 import android.os.Bundle
+import android.os.Vibrator
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -25,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +41,9 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
+import com.example.wristroulette.data.AppPreferencesStore
+import com.example.wristroulette.model.EUROPEAN_RED_NUMBERS
+import com.example.wristroulette.model.EUROPEAN_WHEEL_ORDER
 import com.example.wristroulette.presentation.theme.WristRouletteTheme
 import kotlinx.coroutines.launch
 import kotlin.math.sqrt
@@ -46,12 +51,9 @@ import androidx.compose.runtime.LaunchedEffect
 import android.os.SystemClock
 import androidx.compose.runtime.mutableLongStateOf
 import android.os.VibrationEffect
-import android.os.VibratorManager
-import androidx.annotation.RequiresApi
 
 
 class MainActivity : ComponentActivity() {
-    @RequiresApi(Build.VERSION_CODES.S)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -126,11 +128,57 @@ fun rememberGyroscope(): GyroReading {
     return reading
 }
 
-@RequiresApi(Build.VERSION_CODES.S)
 @Composable
 fun WearApp() {
     WristRouletteTheme {
-        RouletteScreen()
+        val context = LocalContext.current
+        val preferencesStore = remember(context) {
+            AppPreferencesStore(context.applicationContext)
+        }
+
+        var screen by remember {
+            mutableStateOf(AppScreen.MAIN)
+        }
+        var persistedState by remember(preferencesStore) {
+            mutableStateOf(preferencesStore.load())
+        }
+
+        BackHandler(enabled = screen != AppScreen.MAIN) {
+            screen = screen.parent() ?: AppScreen.MAIN
+        }
+
+        when (screen) {
+            AppScreen.MAIN -> MainScreen(onSelect = { screen = it })
+            AppScreen.OPTIONS -> OptionsScreen(
+                settings = persistedState.settings,
+                session = persistedState.session,
+                onSettingsChange = { settings ->
+                    preferencesStore.saveSettings(settings)
+                    persistedState = persistedState.copy(settings = settings)
+                },
+                onResetSession = {
+                    val resetSession = preferencesStore.resetSession()
+                    persistedState = persistedState.copy(session = resetSession)
+                },
+                onBack = { screen = AppScreen.MAIN }
+            )
+            AppScreen.RNG -> RngScreen(
+                settings = persistedState.settings,
+                onBack = { screen = AppScreen.MAIN }
+            )
+            AppScreen.BET_RECORD -> PlaceholderScreen(
+                title = "BET RECORD",
+                message = "Session records arrive in Milestone 4.",
+                onBack = { screen = AppScreen.MAIN }
+            )
+            AppScreen.BET -> BetScreen(
+                onPlay = { screen = AppScreen.PLAY },
+                onBack = { screen = AppScreen.MAIN }
+            )
+            AppScreen.PLAY -> RouletteScreen(
+                buzzDurationMs = persistedState.settings.buzzDuration.durationMs
+            )
+        }
     }
 }
 enum class SpinGestureState {
@@ -142,17 +190,19 @@ data class SpinGestureResult(
     val state: SpinGestureState,
     val launchStrength: Float? = null
 )
-@RequiresApi(Build.VERSION_CODES.S)
 @Composable
-fun RouletteScreen() {
+fun RouletteScreen(
+    buzzDurationMs: Long = 50L
+) {
     val context = LocalContext.current
 
-    val vibratorManager = remember {
-        context.getSystemService(VibratorManager::class.java)
+    @Suppress("DEPRECATION")
+    val vibrator = remember(context) {
+        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
     }
 
-    val vibrator = remember(vibratorManager) {
-        vibratorManager.defaultVibrator
+    DisposableEffect(vibrator) {
+        onDispose { vibrator.cancel() }
     }
 
     var acceptLaunchAfterMs by remember {
@@ -168,7 +218,7 @@ fun RouletteScreen() {
     }
 
     var backswingAxis by remember {
-        mutableStateOf(0)
+        mutableIntStateOf(0)
     }
 
     var backswingSign by remember {
@@ -184,7 +234,7 @@ fun RouletteScreen() {
     }
 
     var spinRequestId by remember {
-        mutableStateOf(0)
+        mutableIntStateOf(0)
     }
 
 
@@ -263,15 +313,21 @@ fun RouletteScreen() {
                     armedAtMs = nowMs
 
                     // Tiny tactile cue: "backswing accepted — throw now"
-                    vibrator.vibrate(
-                        VibrationEffect.createOneShot(
-                            50L,
-                            VibrationEffect.DEFAULT_AMPLITUDE
+                    if (buzzDurationMs > 0L) {
+                        vibrator.vibrate(
+                            VibrationEffect.createOneShot(
+                                buzzDurationMs,
+                                VibrationEffect.DEFAULT_AMPLITUDE
+                            )
                         )
-                    )
+                    }
 
                     // Don't let the vibration itself influence our gyro detector.
-                    acceptLaunchAfterMs = nowMs + 120L
+                    acceptLaunchAfterMs = nowMs + if (buzzDurationMs > 0L) {
+                        buzzDurationMs + 70L
+                    } else {
+                        0L
+                    }
 
                     gestureState =
                         SpinGestureState.ARMED
@@ -485,26 +541,11 @@ fun RouletteWheel(
         val black = Color(0xFF151515)
         val green = Color(0xFF087F23)
 
-        val wheelNumbers = listOf(
-            0,
-            32, 15, 19, 4, 21, 2, 25, 17, 34,
-            6, 27, 13, 36, 11, 30, 8, 23, 10,
-            5, 24, 16, 33, 1, 20, 14, 31, 9,
-            22, 18, 29, 7, 28, 12, 35, 3, 26
-        )
-
-        val redNumbers = setOf(
-            1, 3, 5, 7, 9,
-            12, 14, 16, 18,
-            19, 21, 23, 25, 27,
-            30, 32, 34, 36
-        )
-
-        wheelNumbers.forEachIndexed { index, number ->
+        EUROPEAN_WHEEL_ORDER.forEachIndexed { index, number ->
 
             val color = when {
                 number == 0 -> green
-                number in redNumbers -> red
+                number in EUROPEAN_RED_NUMBERS -> red
                 else -> black
             }
 
@@ -534,7 +575,6 @@ fun RouletteWheel(
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.S)
 @WearPreviewDevices
 @Composable
 fun DefaultPreview() {
