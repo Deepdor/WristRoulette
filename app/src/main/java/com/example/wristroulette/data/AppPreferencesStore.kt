@@ -3,7 +3,11 @@ package com.example.wristroulette.data
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.example.wristroulette.model.BetSettlement
+import com.example.wristroulette.model.BetSlip
 import com.example.wristroulette.model.RngSpan
+import com.example.wristroulette.model.settleBets
+import kotlin.math.max
 
 enum class BuzzDuration(
     val displayName: String,
@@ -43,10 +47,73 @@ data class SessionState(
     }
 }
 
+data class BetRecords(
+    val wins: Int = 0,
+    val biggestWin: Int = 0,
+    val highestBank: Int = SessionState.STARTING_BANK,
+    val highestSessionSpins: Int = 0
+)
+
 data class PersistedAppState(
     val settings: AppSettings = AppSettings(),
-    val session: SessionState = SessionState()
+    val session: SessionState = SessionState(),
+    val records: BetRecords = BetRecords()
 )
+
+data class CompletedRound(
+    val settlement: BetSettlement,
+    val session: SessionState,
+    val records: BetRecords,
+    val sessionEnded: Boolean
+)
+
+fun completeRound(
+    session: SessionState,
+    records: BetRecords,
+    betSlip: BetSlip,
+    winningNumber: Int
+): CompletedRound {
+    require(betSlip.totalStake <= session.bank)
+
+    val settlement = settleBets(
+        betSlip = betSlip,
+        winningNumber = winningNumber
+    )
+    val nextBank = (session.bank.toLong() + settlement.netCredits)
+        .coerceIn(0L, Int.MAX_VALUE.toLong())
+        .toInt()
+    val nextSpinCount = if (session.spinCount == Int.MAX_VALUE) {
+        Int.MAX_VALUE
+    } else {
+        session.spinCount + 1
+    }
+    val nextSession = SessionState(
+        bank = nextBank,
+        spinCount = nextSpinCount
+    )
+    val sessionEnded = nextBank == 0
+    val nextRecords = records.copy(
+        wins = if (settlement.isWin && records.wins < Int.MAX_VALUE) {
+            records.wins + 1
+        } else {
+            records.wins
+        },
+        biggestWin = max(records.biggestWin, settlement.netCredits),
+        highestBank = max(records.highestBank, nextBank),
+        highestSessionSpins = if (sessionEnded) {
+            max(records.highestSessionSpins, nextSpinCount)
+        } else {
+            records.highestSessionSpins
+        }
+    )
+
+    return CompletedRound(
+        settlement = settlement,
+        session = nextSession,
+        records = nextRecords,
+        sessionEnded = sessionEnded
+    )
+}
 
 interface PreferenceBackend {
     fun getString(key: String, defaultValue: String): String
@@ -102,6 +169,16 @@ class AppPreferencesStore(
                 .coerceAtLeast(0),
             spinCount = backend.getInt(KEY_SPIN_COUNT, 0)
                 .coerceAtLeast(0)
+        ),
+        records = BetRecords(
+            wins = backend.getInt(KEY_WINS, 0).coerceAtLeast(0),
+            biggestWin = backend.getInt(KEY_BIGGEST_WIN, 0).coerceAtLeast(0),
+            highestBank = backend.getInt(
+                KEY_HIGHEST_BANK,
+                SessionState.STARTING_BANK
+            ).coerceAtLeast(SessionState.STARTING_BANK),
+            highestSessionSpins = backend.getInt(KEY_HIGHEST_SESSION_SPINS, 0)
+                .coerceAtLeast(0)
         )
     )
 
@@ -116,7 +193,29 @@ class AppPreferencesStore(
         backend.putInt(KEY_SPIN_COUNT, session.spinCount.coerceAtLeast(0))
     }
 
+    fun saveRecords(records: BetRecords) {
+        backend.putInt(KEY_WINS, records.wins.coerceAtLeast(0))
+        backend.putInt(KEY_BIGGEST_WIN, records.biggestWin.coerceAtLeast(0))
+        backend.putInt(
+            KEY_HIGHEST_BANK,
+            records.highestBank.coerceAtLeast(SessionState.STARTING_BANK)
+        )
+        backend.putInt(
+            KEY_HIGHEST_SESSION_SPINS,
+            records.highestSessionSpins.coerceAtLeast(0)
+        )
+    }
+
     fun resetSession(): SessionState {
+        val currentState = load()
+        saveRecords(
+            currentState.records.copy(
+                highestSessionSpins = max(
+                    currentState.records.highestSessionSpins,
+                    currentState.session.spinCount
+                )
+            )
+        )
         val resetState = SessionState()
         saveSession(resetState)
         return resetState
@@ -137,5 +236,9 @@ class AppPreferencesStore(
         const val KEY_RNG_SPAN = "rng_span"
         const val KEY_BANK = "current_bank"
         const val KEY_SPIN_COUNT = "current_session_spin_count"
+        const val KEY_WINS = "record_wins"
+        const val KEY_BIGGEST_WIN = "record_biggest_win"
+        const val KEY_HIGHEST_BANK = "record_highest_bank"
+        const val KEY_HIGHEST_SESSION_SPINS = "record_highest_session_spins"
     }
 }

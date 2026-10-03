@@ -328,9 +328,7 @@ The current concept has been physically proven on the target watch.
 
 ## 9. Wheel Physics
 
-The current prototype uses a fixed Compose tween and is not the final implementation.
-
-The final Play-mode wheel must use a physics/state representation based on angular velocity.
+The original prototype used a fixed Compose tween. Play mode now uses a frame-driven physics/state representation based on angular velocity.
 
 Minimum state:
 
@@ -358,13 +356,26 @@ wheelAngularVelocity decays according to friction
 
 A simple exponential or tuned friction model is acceptable.
 
-### 9.1 Spin duration
+### 9.1 Current physics tuning
 
-The wheel must remain spinning long enough for the user to comfortably perform the subsequent ball-throw gesture.
+Milestone 5 uses the following provisional model:
 
-The current prototype spin duration is too short.
+- accepted gesture strength is clamped to 5–20 rad/s;
+- that range maps to approximately 540–1440 degrees/second of initial wheel velocity;
+- the sign of the forward swing determines wheel direction;
+- exponential friction decays angular velocity each frame;
+- the wheel stops below approximately 6 degrees/second;
+- unusually long frame gaps are clamped so backgrounding cannot jump the simulation forward.
+
+These remain physical-device tuning values rather than fixed product constants.
+
+### 9.2 Spin duration
+
+The wheel must remain spinning long enough for the user to comfortably perform the subsequent ball-throw gesture. The original tween duration was too short.
 
 Target duration is tunable, but a normal spin should provide several seconds of usable wheel rotation after launch.
+
+Milestone 6 makes wheel friction phase-aware. Before a valid ball throw, the wheel uses lighter exponential friction (currently approximately 0.35/second) and retains a useful coasting floor (currently approximately 240 degrees/second). Once the ball is launched, normal wheel decay (currently approximately 0.62/second) resumes and the existing stop threshold applies. These values remain subject to physical-device tuning.
 
 ---
 
@@ -380,6 +391,8 @@ The ball is inserted only after the wheel has been spun.
 
 The user throws the ball by dragging a finger around the **outer edge of the circular watch display**.
 
+The left-side quadrant is reserved for Wear OS left-to-right Back navigation. The available ball-launch zone is therefore shown as a white 270-degree arc rather than a complete circle, and a throw must start within that arc. Once the gesture has begun in the valid zone, minor inward or lateral drift does not invalidate it. This restriction affects initial touch input only; once launched, the simulated ball may travel around the full 360-degree outer track.
+
 The gesture provides:
 
 - direction;
@@ -394,6 +407,10 @@ theta = atan2(y - centerY, x - centerX)
 The angular motion of the touch gesture is used to estimate launch angular velocity.
 
 The implementation should use a short sample window rather than only two instantaneous points, to avoid unrealistic launch velocities caused by touch-coordinate noise.
+
+### 10.2.1 Current throw tuning
+
+Ball launch estimates touch velocity with a linear fit across the most recent 180 ms. Following the Wear OS 7 compatibility pass, a valid gesture may use two or more samples spanning at least 24 ms, provided it travels at least 0.05 radians. Touch speeds below approximately 0.6 rad/s are treated as noise, speeds above approximately 15 rad/s are clamped, and the accepted speed is scaled by 2.4 for the initial ball velocity. The throw must begin inside the permitted outer zone, but brief inward drift after the initial contact no longer invalidates the whole gesture. Rejected attempts display a temporary diagnostic reason and sample count on the watch. These remain physical-device tuning values rather than fixed product constants.
 
 ### 10.3 Same/opposite direction
 
@@ -420,11 +437,15 @@ Immediately after release, the ball initially travels around the outer track.
 
 Its angular velocity decays faster than the wheel's angular velocity.
 
+The ball begins at approximately 44% of the wheel diameter while applying outer-track angular friction of approximately 0.85/second. Milestone 7 begins the inward drop when ball speed falls to approximately 360 degrees/second rather than stopping on the outer track.
+
 ### 11.2 Drop
 
 When ball speed falls below a tunable threshold, the ball begins moving inward toward the rotor/pockets.
 
 The inward transition should be continuous rather than teleporting directly from the outer track to a pocket.
+
+Current Milestone 7 tuning applies approximately 1.10/second angular friction during the drop. Radial velocity begins at approximately -0.035 radius-fraction/second, accelerates inward, and is limited to approximately -0.09 radius-fraction/second.
 
 ### 11.3 Deflectors / chaos
 
@@ -438,6 +459,8 @@ Crossing these zones may perturb:
 
 Small deterministic/random perturbations may be used to create plausible chaotic behavior without requiring a full 3D rigid-body simulation.
 
+Milestone 7 uses four radial deflector bands during the drop. Each crossing applies a small seeded angular nudge, angular-velocity kick, and radial-speed variation. A fresh seed is generated for each throw, while the same state and seed remain repeatable for testing.
+
 ### 11.4 Pocket capture
 
 Once the ball reaches the pocket region, the winning pocket is calculated from the ball's angle relative to the wheel:
@@ -449,6 +472,8 @@ relativeAngle = ballAngle - wheelAngle
 The relative angle maps into one of the 37 European roulette sectors.
 
 The displayed visual pocket and logical result must agree.
+
+Capture currently occurs at approximately 36% of the wheel diameter. The ball snaps to the captured sector center and remains locked to that sector as the rotor finishes slowing. The wheel displays the authoritative sector labels, and the result overlay uses the same `EUROPEAN_WHEEL_ORDER` entry. Bet settlement remains deferred to Milestone 8.
 
 ---
 
@@ -485,17 +510,25 @@ Example:
 
 The total amount staked must never exceed the available bank.
 
+During bet placement, stakes are reserved in an in-memory bet slip. The amount still available to stake is `bank - total stake`. The persisted bank is not changed until a completed roulette result can be settled.
+
+The Bet screen includes a **BET 0** control that clears all current stakes and restores the full bank as available to stake. It preserves the currently selected straight number. Back navigation remains available through the normal Android/Wear OS Back action.
+
 ### 12.3 Bet-screen number selection
 
 Straight-number selection should use the circular display edge as a rotary interaction rather than arrow buttons.
 
 Running a finger around the edge changes the selected number.
 
+The edge selector must not begin over the bottom PLAY/BET 0 navigation row. A selection that begins elsewhere on the edge may continue through the bottom sector, preserving access to every number while ensuring navigation taps are not consumed by the selector.
+
 The selected number should be clearly visible.
+
+The initial interface supports one active straight-number target. Changing the selected number moves that target, including its current stake, to the newly selected number.
 
 ### 12.4 Initial bet types
 
-**TBD / candidate v1 set:**
+The initial v1 set is:
 
 - Red / Black
 - Odd / Even
@@ -506,9 +539,20 @@ Additional roulette bet types may be added later.
 
 ### 12.5 Bet settlement
 
-The final settlement model must preserve ordinary roulette-style stake/payout semantics.
+The initial supported bets use standard European roulette payouts:
 
-Exact payout table for the initial supported bet types will be defined before betting implementation is considered complete.
+- Red / Black, Odd / Even, and Low / High pay 1:1. A winning stake is returned together with an equal amount of profit.
+- A winning straight-number bet pays 35:1. The stake is returned together with 35 times the stake as profit.
+- Zero loses Red / Black, Odd / Even, and Low / High bets. A straight bet on zero wins normally.
+- Multiple active bets are settled independently against the same result.
+
+The persisted bank is updated once for each captured result:
+
+```text
+new bank = previous bank - total stake + total winning returns
+```
+
+A completed spin counts as a win in Bet Record only when its combined net credit change is positive. Biggest Win records the largest positive net credit change from one completed spin, rather than gross returns from an individual bet.
 
 ---
 
@@ -545,7 +589,9 @@ At minimum, the application records/displays:
 
 The application must also track the current session's bank and spin count internally.
 
-The exact presentation of session-spin history versus current/record session count remains tunable.
+Bet Record displays both the current session spin count and the highest completed-session spin count.
+
+A session becomes completed when its bank reaches zero or when the user manually resets it. At that point its final spin count is eligible for Highest Session Spins. An in-progress session remains visible through Current Session Spins but does not update the completed-session record yet.
 
 RNG utility rolls are not betting events and should not automatically be treated as roulette betting records.
 
@@ -555,7 +601,7 @@ Options includes a control to **Reset Bank / Session**.
 
 Resetting the bank resets the current session.
 
-**TBD:** whether lifetime record statistics can be reset independently, and whether Reset Bank should preserve all lifetime records. Default design direction is to keep historical records unless a separate explicit record-reset function is added.
+Reset Bank / Session preserves lifetime record statistics. No independent lifetime-record reset is included in the initial implementation.
 
 ---
 
@@ -663,7 +709,7 @@ The following has already been implemented and tested on a physical Galaxy Watch
 - haptic cue when entering ARMED/SWING state
 - arm gesture successfully launches the wheel on the physical watch
 - manual SPIN control exists as a temporary diagnostic/fallback
-- current rotor animation is still tween-based rather than physics-based
+- Play-mode rotor animation now uses angular velocity and friction rather than a predetermined tween target
 
 Existing proven hardware interaction should be preserved during refactoring unless a milestone explicitly changes it.
 
@@ -894,10 +940,7 @@ The following are intentionally left open:
 - ball launch scaling;
 - ball drop threshold;
 - deflector perturbation model;
-- exact v1 roulette bet types;
 - payout table;
-- Bet Record presentation of current versus best session spin count;
-- lifetime-record reset semantics;
 - exact result-screen Back behavior;
 - final visual asset strategy.
 

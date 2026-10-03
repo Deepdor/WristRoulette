@@ -2,13 +2,11 @@ package com.example.wristroulette.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -17,9 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
 
 enum class AppScreen {
@@ -115,72 +111,5 @@ private fun MainRegion(
             lineHeight = 17.sp,
             textAlign = TextAlign.Center
         )
-    }
-}
-
-@Composable
-fun PlaceholderScreen(
-    title: String,
-    message: String,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = title,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = message,
-            modifier = Modifier.padding(vertical = 12.dp),
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
-        Button(onClick = onBack) {
-            Text("BACK")
-        }
-    }
-}
-
-@Composable
-fun BetScreen(
-    onPlay: () -> Unit,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "BET",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "BANK  100",
-            modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
-            color = Color(0xFFD7B56D),
-            fontSize = 14.sp
-        )
-        Button(onClick = onPlay) {
-            Text("PLAY")
-        }
-        Button(onClick = onBack) {
-            Text("BACK")
-        }
     }
 }
